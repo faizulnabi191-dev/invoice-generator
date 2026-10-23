@@ -15,7 +15,7 @@ const assert = require('node:assert/strict');
     await page.getByRole('button', { name: /Inventory/ }).click();
     await page.getByRole('heading', { name: 'Inventory' }).waitFor();
 
-    await page.getByRole('button', { name: 'Add a watch' }).first().click();
+    await page.getByRole('button', { name: 'Add watch' }).click();
     const dialog = page.getByRole('dialog');
     await dialog.getByRole('heading', { name: 'Add a watch' }).waitFor();
     await dialog.locator('input[name="brand"]').fill('Test Brand');
