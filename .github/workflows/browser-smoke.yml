@@ -1,0 +1,28 @@
+name: Browser smoke test
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+jobs:
+  browser-smoke:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - name: Install Playwright
+        run: |
+          npm init -y
+          npm install --no-save playwright
+          npx playwright install --with-deps chromium
+      - name: Start local web server
+        run: python3 -m http.server 4173 --bind 127.0.0.1 > /tmp/dial-ledger-server.log 2>&1 &
+      - name: Run browser smoke test
+        run: node tests/smoke.cjs
