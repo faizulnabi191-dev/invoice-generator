@@ -476,17 +476,26 @@ function certNo(inv,it,idx){
   return 'AC-'+x+'-'+y;
 }
 function nextNumber(){const s=db.settings;return (s.prefix||'INV')+'-'+new Date().getFullYear()+'-'+pad(s.nextNo||1,4)}
+const stockAffecting=inv=>!!inv&&inv.status!=='Draft'&&inv.status!=='Cancelled';
 function applyStock(oldInv,newInv){
   const m={};db.inventory.forEach(w=>m[w.id]=w);
-  if(oldInv&&oldInv.status!=='Cancelled')oldInv.items.forEach(it=>{if(it.invId&&m[it.invId])m[it.invId].stock+=num(it.qty)});
-  if(newInv&&newInv.status!=='Cancelled')newInv.items.forEach(it=>{if(it.invId&&m[it.invId])m[it.invId].stock=Math.max(0,m[it.invId].stock-num(it.qty))});
+  if(stockAffecting(oldInv))oldInv.items.forEach(it=>{if(it.invId&&m[it.invId])m[it.invId].stock+=num(it.qty)});
+  if(stockAffecting(newInv))newInv.items.forEach(it=>{if(it.invId&&m[it.invId])m[it.invId].stock=Math.max(0,m[it.invId].stock-num(it.qty))});
 }
 function availFor(invId,exceptInvoiceId){
   const w=db.inventory.find(x=>x.id===invId);if(!w)return 0;
   let a=w.stock;const old=db.invoices.find(i=>i.id===exceptInvoiceId);
-  if(old&&old.status!=='Cancelled')old.items.forEach(it=>{if(it.invId===invId)a+=num(it.qty)});
+  if(stockAffecting(old))old.items.forEach(it=>{if(it.invId===invId)a+=num(it.qty)});
   return a;
 }
+function migrateDraftStock(){
+  if(db.settings.stockDraftMigrationV1)return;
+  const m={};db.inventory.forEach(w=>m[w.id]=w);
+  db.invoices.forEach(i=>{if(i.status==='Draft'&&!i.sample)(i.items||[]).forEach(it=>{if(it.invId&&m[it.invId])m[it.invId].stock+=num(it.qty)})});
+  db.settings.stockDraftMigrationV1=true;
+  saveDB();
+}
+migrateDraftStock();
 
 /* ---------- watch art ---------- */
 function watchArt(seed){
@@ -826,7 +835,7 @@ function updateItemMeta(i){
     if(it.invId&&ed.status!=='Cancelled'){
       const used=ed.items.reduce((s,x)=>s+(x.invId===it.invId?num(x.qty):0),0),a=availFor(it.invId,ed._new?null:ed.id);
       if(used>a){st.className='hint warn';st.textContent='Only '+a+' in stock. Lower the quantity or restock first.'}
-      else{st.className='hint';st.textContent=(a-used)+' will remain in stock after this invoice.'}
+      else{st.className='hint';st.textContent=ed.status==='Draft'?(a-used)+' available. Draft invoices do not reserve stock.':(a-used)+' will remain in stock after this invoice.'}
     }else{st.className='hint';st.textContent=it.invId?'':'Custom items do not change inventory.'}
   }
 }
@@ -1043,7 +1052,7 @@ const A={
   viewInvoice:t=>viewInvoice(t.dataset.id),
   editInvoice:t=>{const i=db.invoices.find(x=>x.id===t.dataset.id);if(!i)return;ed=clone(i);ed.saveClient=false;edTab='form';closeModal();go('editor')},
   dupInvoice:t=>dupInvoice(t.dataset.id),
-  delInvoice:t=>{const i=db.invoices.find(x=>x.id===t.dataset.id);if(!i)return;confirmModal({title:'Delete '+i.number+'?',text:'This removes the invoice for good'+(i.status!=='Cancelled'&&i.items.some(x=>x.invId)?' and returns its watches to stock':'')+'.',ok:'Delete invoice',danger:true,onOk:()=>{applyStock(i,null);db.invoices=db.invoices.filter(x=>x.id!==i.id);saveDB();toast('Invoice deleted.');render()}})},
+  delInvoice:t=>{const i=db.invoices.find(x=>x.id===t.dataset.id);if(!i)return;confirmModal({title:'Delete '+i.number+'?',text:'This removes the invoice for good'+(stockAffecting(i)&&i.items.some(x=>x.invId)?' and returns its watches to stock':'')+'.',ok:'Delete invoice',danger:true,onOk:()=>{applyStock(i,null);db.invoices=db.invoices.filter(x=>x.id!==i.id);saveDB();toast('Invoice deleted.');render()}})},
   markPaid:t=>{setStatus(t.dataset.id,'Paid');render()},
   pdfInvoice:t=>downloadInvoice(t.dataset.id),pdfWarranty:t=>downloadWarranty(t.dataset.id),pdfCert:t=>downloadCert(t.dataset.id),
   emailInvoice:t=>emailModal(t.dataset.id),
