@@ -462,8 +462,9 @@ if(!db||!db.settings||!db.inventory){db=seed();saveDB()}
 /* ---------- calculations ---------- */
 function calc(inv){
   const sub=round2((inv.items||[]).reduce((s,it)=>s+num(it.qty)*num(it.price),0));
-  const disc=round2(inv.discType==='flat'?Math.min(num(inv.discount),sub):sub*num(inv.discount)/100);
-  const taxable=round2(sub-disc), tax=round2(taxable*num(inv.taxRate)/100), ship=round2(num(inv.shipping));
+  const discount=Math.max(0,num(inv.discount));
+  const disc=round2(inv.discType==='flat'?Math.min(discount,Math.max(0,sub)):Math.max(0,sub)*Math.min(discount,100)/100);
+  const taxable=Math.max(0,round2(sub-disc)), tax=round2(taxable*Math.max(0,num(inv.taxRate))/100), ship=Math.max(0,round2(num(inv.shipping)));
   return{sub,disc,taxable,tax,ship,total:round2(taxable+tax+ship)};
 }
 const dstatus=i=>(i.status==='Sent'&&i.due&&i.due<today())?'Overdue':i.status;
@@ -804,7 +805,7 @@ function vEditor(){
   +'<label class="f wide" id="shipWrap"'+(e.sameShip?' hidden':'')+'>Shipping address<textarea data-bind="client.shipping">'+esc(e.client.shipping)+'</textarea></label>'
   +'<label class="check wide" id="saveCliWrap"'+(e.clientId?' hidden':'')+'><input type="checkbox" data-bind="saveClient"'+(e.saveClient?' checked':'')+'> Save this client to my client list</label></div></section>'
   +'<section class="glass sec"><h2>Watches</h2><div style="display:flex;flex-direction:column;gap:12px" id="itemsBox">'+e.items.map(itemRow).join('')+'</div><div class="actions" style="margin-top:12px"><button class="btn" type="button" data-act="addItem">'+ic('watch')+'Add watch from inventory</button><button class="btn" type="button" data-act="addCustom">'+ic('plus')+'Add custom line</button></div></section>'
-  +'<section class="glass sec"><h2>Charges</h2><div class="fgrid"><label class="f">Discount<input type="number" min="0" step="0.01" data-bind="discount" value="'+esc(e.discount)+'"></label><label class="f">Discount type<select data-bind="discType">'+o(e.discType,'pct','Percent (%)')+o(e.discType,'flat','Fixed amount')+'</select></label><label class="f">Tax rate (%)<input type="number" min="0" step="0.01" data-bind="taxRate" value="'+esc(e.taxRate)+'"></label><label class="f">Shipping and insurance<input type="number" min="0" step="0.01" data-bind="shipping" value="'+esc(e.shipping)+'"></label></div></section>'
+  +'<section class="glass sec"><h2>Charges</h2><div class="fgrid"><label class="f">Discount<input type="number" min="0"'+(e.discType==='pct'?' max="100"':'')+' step="0.01" data-bind="discount" value="'+esc(e.discount)+'"></label><label class="f">Discount type<select data-bind="discType">'+o(e.discType,'pct','Percent (%)')+o(e.discType,'flat','Fixed amount')+'</select></label><label class="f">Tax rate (%)<input type="number" min="0" step="0.01" data-bind="taxRate" value="'+esc(e.taxRate)+'"></label><label class="f">Shipping and insurance<input type="number" min="0" step="0.01" data-bind="shipping" value="'+esc(e.shipping)+'"></label></div></section>'
   +'<section class="glass sec"><h2>Notes and terms</h2><div class="fgrid"><label class="f wide">Notes<textarea data-bind="notes">'+esc(e.notes)+'</textarea></label><label class="f wide">Terms<textarea data-bind="terms">'+esc(e.terms)+'</textarea></label></div></section>'
   +'<div class="glass savebar"><div><span class="tot num" id="sumTot"></span><small id="sumSub"></small></div><div class="actions"><button class="btn" type="button" data-act="saveInvoice">Save invoice</button><button class="btn primary" type="button" data-act="saveInvoicePdf">'+ic('download')+'Save and get PDF</button></div></div></div>'
   +'<aside class="ed-preview" id="prevBox" aria-label="Invoice preview"></aside></div>';
@@ -833,6 +834,10 @@ function refreshItems(){$('#itemsBox').innerHTML=ed.items.map(itemRow).join('');
 function validateInvoice(){
   const e=ed;
   if(!(e.client.name||'').trim())return 'Add the client name before saving.';
+  if(num(e.discount)<0)return 'Discount cannot be negative.';
+  if(e.discType==='pct'&&num(e.discount)>100)return 'Percentage discount cannot exceed 100%.';
+  if(num(e.taxRate)<0)return 'Tax rate cannot be negative.';
+  if(num(e.shipping)<0)return 'Shipping and insurance cannot be negative.';
   const items=e.items.filter(i=>(i.brand||i.model||'').toString().trim());
   if(!items.length)return 'Add at least one watch with a brand or model name.';
   if(items.some(i=>num(i.qty)<1))return 'Every watch needs a quantity of at least 1.';
