@@ -55,6 +55,7 @@ const assert = require('node:assert/strict');
     const cancelledRow = page.locator('#invRows tr').filter({ hasText: 'CI Test Customer' });
     await cancelledRow.getByRole('button', { name: /^View/ }).click();
     await page.getByRole('dialog').locator('[data-statusfor]').selectOption('Sent');
+    await page.keyboard.press('Escape');
     await page.getByRole('button', { name: /Inventory/ }).click();
     await watchCard.getByText(/^(2 in stock|2 left)$/).waitFor();
 
@@ -76,6 +77,7 @@ const assert = require('node:assert/strict');
     const editedRow = page.locator('#invRows tr').filter({ hasText: 'CI Test Customer' });
     await editedRow.getByRole('button', { name: /^View/ }).click();
     await page.getByRole('dialog').locator('[data-statusfor]').selectOption('Cancelled');
+    await page.keyboard.press('Escape');
     await page.getByRole('button', { name: /Inventory/ }).click();
     await watchCard.getByText('3 in stock', { exact: true }).waitFor();
 
