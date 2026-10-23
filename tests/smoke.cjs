@@ -36,17 +36,51 @@ const assert = require('node:assert/strict');
 
     await page.getByRole('heading', { name: 'Invoices' }).waitFor();
     await page.getByText('CI Test Customer', { exact: true }).first().waitFor();
-    await page.getByRole('button', { name: /Inventory/ }).click();
-    await watchCard.getByText(/^(2 in stock|2 left)$/).waitFor();
-
     const invoiceRow = page.locator('#invRows tr').filter({ hasText: 'CI Test Customer' });
     const downloadPromise = page.waitForEvent('download');
     await invoiceRow.getByRole('button', { name: /Download PDF/ }).click();
     const download = await downloadPromise;
     assert.match(download.suggestedFilename(), /\.pdf$/i);
 
+    // Cancelling a stock-affecting invoice must return its watch to inventory.
+    await invoiceRow.getByRole('button', { name: /^View/ }).click();
+    const invoiceDialog = page.getByRole('dialog');
+    await invoiceDialog.locator('[data-statusfor]').selectOption('Cancelled');
+    await page.getByRole('button', { name: /Inventory/ }).click();
+    await watchCard.getByText('3 in stock', { exact: true }).waitFor();
+
+    // Reopening the cancelled invoice should deduct stock exactly once again.
+    await page.getByRole('button', { name: /Invoices/ }).click();
+    await page.getByRole('heading', { name: 'Invoices' }).waitFor();
+    const cancelledRow = page.locator('#invRows tr').filter({ hasText: 'CI Test Customer' });
+    await cancelledRow.getByRole('button', { name: /^View/ }).click();
+    await page.getByRole('dialog').locator('[data-statusfor]').selectOption('Sent');
+    await page.getByRole('button', { name: /Inventory/ }).click();
+    await watchCard.getByText(/^(2 in stock|2 left)$/).waitFor();
+
+    // Editing quantity from one to two should reconcile the stock delta.
+    await page.getByRole('button', { name: /Invoices/ }).click();
+    await page.getByRole('heading', { name: 'Invoices' }).waitFor();
+    const sentRow = page.locator('#invRows tr').filter({ hasText: 'CI Test Customer' });
+    await sentRow.getByRole('button', { name: /^Edit/ }).click();
+    await page.getByRole('heading', { name: /^Edit/ }).waitFor();
+    await page.locator('[data-f="qty"]').first().fill('2');
+    await page.getByRole('button', { name: 'Save invoice', exact: true }).click();
+    await page.getByRole('heading', { name: 'Invoices' }).waitFor();
+    await page.getByRole('button', { name: /Inventory/ }).click();
+    await watchCard.getByText(/^(1 in stock|1 left)$/).waitFor();
+
+    // Cancelling after an edit returns the full edited quantity.
+    await page.getByRole('button', { name: /Invoices/ }).click();
+    await page.getByRole('heading', { name: 'Invoices' }).waitFor();
+    const editedRow = page.locator('#invRows tr').filter({ hasText: 'CI Test Customer' });
+    await editedRow.getByRole('button', { name: /^View/ }).click();
+    await page.getByRole('dialog').locator('[data-statusfor]').selectOption('Cancelled');
+    await page.getByRole('button', { name: /Inventory/ }).click();
+    await watchCard.getByText('3 in stock', { exact: true }).waitFor();
+
     assert.deepEqual(errors, [], 'page should not emit uncaught JavaScript errors');
-    console.log('PASS: app loads, watch creation works, Sent invoice deducts stock, and invoice PDF downloads.');
+    console.log('PASS: app loads, watch creation works, invoice PDF downloads, cancellation/reopening reconciles stock, and editing quantity updates stock correctly.');
   } finally {
     await browser.close();
   }
