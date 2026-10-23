@@ -24,15 +24,15 @@ const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'dial-ledger-js-'));
 let failed = false;
 try {
   inlineScripts.forEach((script, index) => {
-    const file = path.join(tempDir, \`inline-\${index + 1}.js\`);
+    const file = path.join(tempDir, 'inline-' + (index + 1) + '.js');
     fs.writeFileSync(file, script, 'utf8');
     const result = spawnSync(process.execPath, ['--check', file], { encoding: 'utf8' });
     if (result.status !== 0) {
       failed = true;
-      console.error(\`Syntax check failed for inline script \${index + 1}:\`);
+      console.error('Syntax check failed for inline script ' + (index + 1) + ':');
       process.stderr.write(result.stderr || result.stdout || 'Node syntax check failed.\n');
     } else {
-      console.log(\`PASS: inline script \${index + 1} syntax\`);
+      console.log('PASS: inline script ' + (index + 1) + ' syntax');
     }
   });
 } finally {
@@ -40,4 +40,4 @@ try {
 }
 
 if (failed) process.exit(1);
-console.log(\`Validated \${inlineScripts.length} inline JavaScript block(s).\`);
+console.log('Validated ' + inlineScripts.length + ' inline JavaScript block(s).');
