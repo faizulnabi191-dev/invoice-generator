@@ -37,7 +37,7 @@ const assert = require('node:assert/strict');
     await page.getByRole('heading', { name: 'Invoices' }).waitFor();
     await page.getByText('CI Test Customer', { exact: true }).first().waitFor();
     await page.getByRole('button', { name: /Inventory/ }).click();
-    await watchCard.getByText('2 in stock', { exact: true }).waitFor();
+    await watchCard.getByText(/^(2 in stock|2 left)$/).waitFor();
 
     const invoiceRow = page.locator('#invRows tr').filter({ hasText: 'CI Test Customer' });
     const downloadPromise = page.waitForEvent('download');
