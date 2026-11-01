@@ -758,12 +758,33 @@ function clientForm(id){
 }
 
 /* ---------- public certificate verification ---------- */
+let adminSession=null,adminBusy=false;
 function vVerify(){
-  return '<div class="head"><div><h1>Check a certificate</h1><p>Check a certificate against the Dial &amp; Ledger online registry.</p></div></div>'
-  +'<div class="glass card" style="margin-bottom:14px;border-left:3px solid var(--info)"><b>Online registry verification</b><p class="muted" style="margin-top:6px">A result is a match against the issuing shop\'s online certificate record. It confirms that a record exists and shows its current registry status; it is not, by itself, a forensic examination or independent guarantee of a watch\'s authenticity.</p></div>'
-  +'<form class="glass card" data-form="verify" style="display:flex;gap:10px;flex-wrap:wrap;align-items:flex-end"><label class="f" style="flex:1 1 260px">Certificate number<input type="text" id="vCode" class="mono" placeholder="Enter online certificate code" autocomplete="off" spellcheck="false" maxlength="80" required></label><button class="btn primary" type="submit">'+ic('shield')+'Verify online</button></form><div id="vOut" aria-live="polite"></div>'
-  +'<p class="hint" style="margin-top:12px">Older AC-XXXX-XXXX codes were created locally and are not registered in the online database. They cannot be verified online until reissued through the secure issuing workflow.</p>';
+ const admin=adminSession;
+ return '<div class="head"><div><h1>Check a certificate</h1><p>Check a certificate against the Dial &amp; Ledger online registry.</p></div></div>'
+ +'<div class="glass card" style="margin-bottom:14px;border-left:3px solid var(--info)"><b>Online registry verification</b><p class="muted" style="margin-top:6px">A result is a match against the issuing shop\'s online certificate record. It confirms that a record exists and shows its current registry status; it is not, by itself, a forensic examination or independent guarantee of a watch\'s authenticity.</p></div>'
+ +'<form class="glass card" data-form="verify" style="display:flex;gap:10px;flex-wrap:wrap;align-items:flex-end"><label class="f" style="flex:1 1 260px">Certificate number<input type="text" name="vCode" id="vCode" class="mono" placeholder="Enter online certificate code" autocomplete="off" spellcheck="false" maxlength="80" required></label><button class="btn primary" type="submit">'+ic('shield')+'Verify online</button></form><div id="vOut" aria-live="polite"></div>'
+ +'<p class="hint" style="margin-top:12px">Older AC-XXXX-XXXX codes were created locally and are not registered in the online database. They cannot be verified online until reissued through the secure issuing workflow.</p>'
+ +'<div class="head" style="margin-top:28px"><div><h2>Administrator certificate issuing</h2><p>Sign in with your authorised Supabase administrator account to issue a new online certificate.</p></div></div>'
+ +(admin
+ ? '<div class="glass card" style="margin-bottom:14px"><div style="display:flex;justify-content:space-between;gap:12px;align-items:center;flex-wrap:wrap"><div><b>Administrator signed in</b><p class="muted" style="margin-top:4px">'+esc(admin.user&&admin.user.email||'Authorised administrator')+'</p></div><button class="btn sm" type="button" data-act="adminLogout">Sign out</button></div></div>'
+ +'<form class="glass card" data-form="adminIssue"><div class="fgrid"><label class="f">Watch brand<input name="brand" maxlength="100" required placeholder="e.g. Seiko"></label><label class="f">Watch model<input name="model" maxlength="150" required placeholder="e.g. Presage"></label><label class="f">Watch reference<input name="reference" maxlength="100" placeholder="Optional"></label><label class="f">Serial number (last 4 only)<input name="serialLast4" maxlength="4" pattern="[A-Za-z0-9]{0,4}" placeholder="Optional"></label><label class="f">Issue date<input name="issueDate" type="date" value="'+today()+'" required></label><label class="f">Warranty until<input name="warrantyUntil" type="date"></label></div><p class="hint" style="margin:12px 0">Do not enter a customer name, address, full serial number, or invoice details. Supabase generates the certificate code securely.</p><button class="btn primary" type="submit">'+ic('shield')+'Issue certificate</button><div id="issueOut" aria-live="polite" style="margin-top:12px"></div></form>'
+ : '<form class="glass card" data-form="adminLogin"><div class="fgrid"><label class="f wide">Administrator email<input type="email" name="email" autocomplete="username" required placeholder="Your Supabase admin email"></label><label class="f wide">Password<input type="password" name="password" autocomplete="current-password" required></label></div><p class="hint" style="margin:12px 0">Your password is sent directly to Supabase Authentication and is not saved in this website.</p><button class="btn primary" type="submit">Administrator sign in</button><div id="adminLoginOut" aria-live="polite" style="margin-top:12px"></div></form>');
 }
+async function adminLogin(email,password){
+ const out=$('#adminLoginOut');if(!out||adminBusy)return;adminBusy=true;out.textContent='Signing in securely…';
+ try{const r=await fetch(SUPABASE_URL+'/auth/v1/token?grant_type=password',{method:'POST',headers:{'Content-Type':'application/json','apikey':SUPABASE_PUBLISHABLE_KEY},body:JSON.stringify({email:String(email||'').trim(),password:String(password||'')})});const data=await r.json();if(!r.ok)throw new Error(data.msg||data.message||data.error_description||'Sign-in failed. Check your email and password.');if(!data.access_token||!data.user)throw new Error('Supabase did not return a valid session.');adminSession={access_token:data.access_token,user:data.user};render();toast('Administrator signed in.','good')}
+ catch(e){out.textContent=e.message||'Unable to sign in.';out.style.color='var(--bad)'}finally{adminBusy=false}
+}
+async function issueCertificate(d,form){
+ const out=$('#issueOut');if(!out||adminBusy)return;if(!adminSession||!adminSession.access_token){adminSession=null;render();toast('Please sign in again.','bad');return}
+ if(d.warrantyUntil&&d.issueDate&&d.warrantyUntil<d.issueDate){out.textContent='Warranty end date cannot be before issue date.';return}
+ adminBusy=true;out.textContent='Creating certificate securely…';
+ try{const r=await fetch(SUPABASE_URL+'/rest/v1/rpc/issue_certificate',{method:'POST',headers:{'Content-Type':'application/json','apikey':SUPABASE_PUBLISHABLE_KEY,'Authorization':'Bearer '+adminSession.access_token},body:JSON.stringify({p_watch_brand:String(d.brand||'').trim(),p_watch_model:String(d.model||'').trim(),p_watch_reference:String(d.reference||'').trim()||null,p_serial_last4:String(d.serialLast4||'').trim()||null,p_issue_date:d.issueDate||today(),p_warranty_until:d.warrantyUntil||null})});const data=await r.json();if(!r.ok)throw new Error(data.message||data.details||data.hint||'Certificate could not be issued. Confirm this account is authorised.');const row=Array.isArray(data)?data[0]:data;if(!row||!row.certificate_code)throw new Error('The issuing function returned no certificate code.');
+ out.innerHTML='<div class="glass vres ok"><h2 style="color:var(--good)">Certificate issued successfully</h2><p class="muted" style="margin:6px 0">Save this code now. It will not be shown again after leaving this screen.</p><p class="mono" style="font-size:1.2rem;font-weight:700;overflow-wrap:anywhere">'+esc(row.certificate_code)+'</p><button class="btn sm" type="button" data-act="copyIssuedCode" data-code="'+esc(row.certificate_code)+'">Copy certificate code</button></div>';form.reset();const dateField=form.querySelector('[name="issueDate"]');if(dateField)dateField.value=today()
+ }catch(e){out.textContent=e.message||'Certificate could not be issued.';out.style.color='var(--bad)'}finally{adminBusy=false}
+}
+
 let verifyBusy=false,lastVerifyAt=0;
 async function verifyCode(code){
   code=String(code||'').trim().toUpperCase();const out=$('#vOut');if(!out)return;
@@ -1086,6 +1107,8 @@ function readImage(file,max,type,q){
 
 /* ---------- events ---------- */
 const A={
+  adminLogout:()=>{adminSession=null;render();toast('Signed out.')},
+  copyIssuedCode:t=>copyOut(t.dataset.code||'',null),
   nav:t=>go(t.dataset.v),
   closeModal:()=>closeModal(),
   newInvoice:()=>{closeModal();startInvoice()},
@@ -1183,7 +1206,7 @@ document.addEventListener('submit',e=>{
     if(!o.name){toast('Client name is required.','bad');return}
     if(f.dataset.id)Object.assign(db.clients.find(x=>x.id===f.dataset.id),o);else db.clients.push(Object.assign({id:uid()},o));
     saveDB();closeModal();toast(f.dataset.id?'Client updated.':'Client added.');render();
-  }else if(k==='verify'){verifyCode(d.vCode||$('#vCode').value)}
+  }else if(k==='verify'){verifyCode(d.vCode||$('#vCode').value)}else if(k==='adminLogin'){adminLogin(d.email,d.password)}else if(k==='adminIssue'){issueCertificate(d,f)}
 });
 document.addEventListener('change',async e=>{
   const el=e.target;
