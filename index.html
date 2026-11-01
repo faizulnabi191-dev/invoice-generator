@@ -422,6 +422,22 @@ const KEY='dial-ledger.v1', TKEY='dial-ledger.theme';
 let storageWarned=false;
 function loadDB(){try{const r=localStorage.getItem(KEY);return r?JSON.parse(r):null}catch(e){return null}}
 function saveDB(){try{localStorage.setItem(KEY,JSON.stringify(db))}catch(e){if(!storageWarned){storageWarned=true;toast('Browser storage is unavailable here, so changes last until you close the page. Use Settings to back up your data.','warn')}}}
+function isPlainRecord(v){return !!v&&typeof v==='object'&&!Array.isArray(v)&&Object.getPrototypeOf(v)===Object.prototype}
+function isSafeBackup(v){
+  if(!isPlainRecord(v)||!isPlainRecord(v.settings)||!isPlainRecord(v.settings.shop))return false;
+  if(!Array.isArray(v.inventory)||!Array.isArray(v.clients)||!Array.isArray(v.invoices))return false;
+  const seen=new Set();
+  const safe=(x,depth=0)=>{
+    if(depth>40)return false;
+    if(x===null||typeof x==='string'||typeof x==='boolean')return true;
+    if(typeof x==='number')return Number.isFinite(x);
+    if(Array.isArray(x))return x.length<=100000&&x.every(y=>safe(y,depth+1));
+    if(!isPlainRecord(x))return false;
+    for(const k of Object.keys(x)){if(k==='__proto__'||k==='prototype'||k==='constructor'||!safe(x[k],depth+1))return false}
+    return true;
+  };
+  return safe(v)&&v.inventory.every(isPlainRecord)&&v.clients.every(isPlainRecord)&&v.invoices.every(isPlainRecord);
+}
 const defaults=()=>({settings:{shop:{name:'Meridian Watch House',address:'41 Clerkenwell Row\nLondon EC1R 0DU',email:'sales@meridianwatch.example',phone:'+44 20 7946 0142',taxId:'GB 204 5512 90',logo:'',logoRatio:1},currency:'USD',taxRate:8,warrantyMonths:24,lowStock:3,prefix:'INV',nextNo:1,template:'classic',notes:'Thank you for choosing us. Every watch is inspected and serviced before dispatch.',terms:'Payment due within 14 days. Watches remain the property of the seller until paid in full. Returns accepted within 14 days if unworn and with all original packaging.'},inventory:[],clients:[],invoices:[]});
 let db=loadDB();
 function seed(){
@@ -1149,7 +1165,20 @@ document.addEventListener('change',async e=>{
   if(el.id==='wImg'&&el.files[0]){try{const r=await readImage(el.files[0],640,'image/jpeg',.82);pendingImg=r.url;$('#wPrev').innerHTML='<img src="'+r.url+'" alt="">'}catch(x){toast('That image could not be read. Try a JPG or PNG.','bad')}}
   if(el.id==='logoIn'&&el.files[0]){try{const r=await readImage(el.files[0],360,'image/png');db.settings.shop.logo=r.url;db.settings.shop.logoRatio=r.ratio;saveDB();toast('Logo updated.');render()}catch(x){toast('That image could not be read. Try a PNG or JPG.','bad')}}
   if(el.id==='fileImport'&&el.files[0]){
-    const fr=new FileReader();fr.onload=()=>{try{const j=JSON.parse(fr.result);if(!j.settings||!Array.isArray(j.inventory)||!Array.isArray(j.invoices)||!Array.isArray(j.clients))throw 0;confirmModal({title:'Restore this backup?',text:'It replaces everything currently in the app ('+j.invoices.length+' invoices, '+j.inventory.length+' watches, '+j.clients.length+' clients).',ok:'Restore backup',danger:true,onOk:()=>{db=j;saveDB();buildShell();toast('Backup restored.');render()}})}catch(x){toast('That file is not a Dial & Ledger backup.','bad')}el.value=''};fr.readAsText(el.files[0]);
+    const file=el.files[0];
+    if(file.size>10*1024*1024){toast('Backup file is too large. Choose a file under 10 MB.','bad');el.value='';return}
+    const fr=new FileReader();fr.onload=()=>{try{
+      const j=JSON.parse(fr.result);
+      if(!isSafeBackup(j))throw new Error('Invalid backup structure');
+      const safeBackup=JSON.parse(JSON.stringify(j));
+      confirmModal({title:'Restore this backup?',text:'It replaces everything currently in the app ('+safeBackup.invoices.length+' invoices, '+safeBackup.inventory.length+' watches, '+safeBackup.clients.length+' clients). Only restore a backup you created or trust.',ok:'Restore backup',danger:true,onOk:()=>{
+        const previous=db;
+        db=safeBackup;
+        try{saveDB();buildShell();toast('Backup restored.');render()}
+        catch(err){db=previous;saveDB();toast('Restore failed. Your previous data was kept.','bad')}
+      }});
+    }catch(x){toast('This file is not a valid Dial & Ledger backup. Your current data was not changed.','bad')}
+    el.value=''};fr.onerror=()=>{toast('The backup file could not be read.','bad');el.value=''};fr.readAsText(file);
   }
 });
 window.addEventListener('hashchange',()=>{const h=(location.hash||'').slice(1);if(VIEWS.some(v=>v[0]===h)&&h!==view){go(h)}});
