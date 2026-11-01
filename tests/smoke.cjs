@@ -81,6 +81,41 @@ const assert = require('node:assert/strict');
     await page.getByRole('button', { name: /Inventory/ }).click();
     await watchCard.getByText('3 in stock', { exact: true }).waitFor();
 
+    // Backup restore validation: valid files prompt before replacing data;
+    // malformed, structurally unsafe, and oversized files must be rejected.
+    await page.getByRole('button', { name: /Settings/ }).click();
+    await page.getByRole('heading', { name: 'Settings' }).waitFor();
+    const storageKey = 'dial-ledger.v1';
+    const beforeRestore = await page.evaluate(key => localStorage.getItem(key), storageKey);
+    assert.ok(beforeRestore, 'app data should be present before backup tests');
+    const validBackup = JSON.parse(beforeRestore);
+
+    await page.locator('#fileImport').setInputFiles({
+      name: 'valid-backup.json',
+      mimeType: 'application/json',
+      buffer: Buffer.from(JSON.stringify(validBackup))
+    });
+    await page.getByRole('dialog').getByRole('heading', { name: 'Restore this backup?' }).waitFor();
+    await page.getByRole('button', { name: 'Cancel', exact: true }).click();
+    assert.equal(await page.evaluate(key => localStorage.getItem(key), storageKey), beforeRestore,
+      'cancelling a valid restore must leave existing data unchanged');
+
+    const rejectedBackups = [
+      { name: 'malformed.json', content: '{not valid json' },
+      { name: 'unsafe.json', content: JSON.stringify({ ...validBackup, inventory: [null] }) },
+      { name: 'oversized.json', content: ' '.repeat(10 * 1024 * 1024 + 1) }
+    ];
+    for (const backup of rejectedBackups) {
+      await page.locator('#fileImport').setInputFiles({
+        name: backup.name,
+        mimeType: 'application/json',
+        buffer: Buffer.from(backup.content)
+      });
+      await page.getByText(/This file is not a valid Dial & Ledger backup|Backup file is too large/, { exact: false }).waitFor();
+      assert.equal(await page.evaluate(key => localStorage.getItem(key), storageKey), beforeRestore,
+        backup.name + ' must not change existing app data');
+    }
+
     assert.deepEqual(errors, [], 'page should not emit uncaught JavaScript errors');
     console.log('PASS: app loads, watch creation works, invoice PDF downloads, cancellation/reopening reconciles stock, and editing quantity updates stock correctly.');
   } finally {
