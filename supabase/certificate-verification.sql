@@ -42,7 +42,6 @@ as $$
          c.serial_last4, c.issue_date, c.warranty_until
   from public.certificates c
   where c.code = upper(trim(p_code))
-  limit 1
   union all
   select false, null::text, null::text, null::text, null::text,
          null::text, null::date, null::date
