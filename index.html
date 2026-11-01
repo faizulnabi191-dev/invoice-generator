@@ -377,6 +377,8 @@ td.r,th.r{text-align:right}
 <script>
 (function(){
 'use strict';
+const SUPABASE_URL='https://zxqpgqrbvstjzutcodmq.supabase.co';
+const SUPABASE_PUBLISHABLE_KEY='sb_publishable_ju6uUpVu0yxPVD5tp9gjhg_bKFBmcAt';
 /* ---------- helpers ---------- */
 const $=(s,r=document)=>r.querySelector(s), $$=(s,r=document)=>Array.from(r.querySelectorAll(s));
 const esc=s=>String(s==null?'':s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
@@ -755,22 +757,45 @@ function clientForm(id){
   openModal('<form data-form="client" data-id="'+(id||'')+'"><div class="m-head"><h2>'+(id?'Edit client':'Add a client')+'</h2><button class="icon" type="button" data-act="closeModal" aria-label="Close">'+ic('x')+'</button></div><div class="m-body"><div class="fgrid"><label class="f wide">Full name or company<input type="text" name="name" required value="'+esc(c.name)+'"></label><label class="f">Email<input type="email" name="email" value="'+esc(c.email)+'"></label><label class="f">Phone<input type="tel" name="phone" value="'+esc(c.phone)+'"></label><label class="f wide">Billing address<textarea name="billing">'+esc(c.billing)+'</textarea></label><label class="f wide">Shipping address<textarea name="shipping">'+esc(c.shipping)+'</textarea></label></div></div><div class="m-foot"><button class="btn" type="button" data-act="closeModal">Cancel</button><button class="btn primary" type="submit">'+(id?'Save changes':'Add client')+'</button></div></form>');
 }
 
-/* ---------- verify ---------- */
+/* ---------- public certificate verification ---------- */
 function vVerify(){
-  const all=[];db.invoices.forEach(i=>{if(i.status!=='Cancelled')watchLines(i).forEach(x=>all.push({code:certNo(i,x.it,x.idx),inv:i,it:x.it}))});
-  all.sort((a,b)=>b.inv.date.localeCompare(a.inv.date));
-  return '<div class="head"><div><h1>Check a certificate</h1><p>Enter the certificate number printed on a warranty card or certificate of authenticity.</p></div></div>'
-  +'<div class="glass card" style="margin-bottom:14px;border-left:3px solid var(--warn)"><b>Important verification limitation</b><p class="muted" style="margin-top:6px">This checker searches records saved in this browser only. Certificate numbers are references generated from invoice data, not cryptographic signatures, and local records can be edited or copied. This is not a public or independent verification service, and a match here does not prove that a watch is genuine. For official confirmation, contact the issuing shop using contact details you trust.</p></div>'
-  +'<form class="glass card" data-form="verify" style="display:flex;gap:10px;flex-wrap:wrap;align-items:flex-end"><label class="f" style="flex:1 1 260px">Certificate number<input type="text" id="vCode" class="mono" placeholder="AC-XXXX-XXXX" autocomplete="off" spellcheck="false"></label><button class="btn primary" type="submit">'+ic('shield')+'Check record</button></form><div id="vOut"></div>'
-  +'<section class="glass card" style="margin-top:14px"><h2>Recently issued</h2>'+(all.length?'<div class="rows">'+all.slice(0,8).map(a=>'<div class="row"><div><div class="t mono">'+a.code+'</div><div class="s">'+esc(a.it.brand+' '+a.it.model)+' &middot; '+esc(a.inv.client.name)+'</div></div><button class="btn sm" type="button" data-act="verifyCode" data-code="'+a.code+'">Check</button></div>').join('')+'</div>':'<div class="empty"><b>No certificates yet</b>Certificates are created for each watch on an invoice.</div>')+'</section>';
+  return '<div class="head"><div><h1>Check a certificate</h1><p>Check a certificate against the Dial &amp; Ledger online registry.</p></div></div>'
+  +'<div class="glass card" style="margin-bottom:14px;border-left:3px solid var(--info)"><b>Online registry verification</b><p class="muted" style="margin-top:6px">A result is a match against the issuing shop\'s online certificate record. It confirms that a record exists and shows its current registry status; it is not, by itself, a forensic examination or independent guarantee of a watch\'s authenticity.</p></div>'
+  +'<form class="glass card" data-form="verify" style="display:flex;gap:10px;flex-wrap:wrap;align-items:flex-end"><label class="f" style="flex:1 1 260px">Certificate number<input type="text" id="vCode" class="mono" placeholder="Enter online certificate code" autocomplete="off" spellcheck="false" maxlength="80" required></label><button class="btn primary" type="submit">'+ic('shield')+'Verify online</button></form><div id="vOut" aria-live="polite"></div>'
+  +'<p class="hint" style="margin-top:12px">Older AC-XXXX-XXXX codes were created locally and are not registered in the online database. They cannot be verified online until reissued through the secure issuing workflow.</p>';
 }
-function verifyCode(code){
+let verifyBusy=false,lastVerifyAt=0;
+async function verifyCode(code){
   code=String(code||'').trim().toUpperCase();const out=$('#vOut');if(!out)return;
   if(!code){out.innerHTML='';return}
-  let hit=null;db.invoices.forEach(i=>{if(i.status!=='Cancelled')watchLines(i).forEach(x=>{if(certNo(i,x.it,x.idx)===code)hit={inv:i,it:x.it}})});
-  if(!hit){out.innerHTML='<div class="glass vres no"><h2 style="color:var(--bad)">No matching local record</h2><p class="muted" style="margin-top:6px">No certificate with the number <span class="mono">'+esc(code)+'</span> was found in this browser workspace. This does not establish that the certificate is fake; records may be stored in another browser or device. Contact the issuing shop for confirmation.</p></div>';return}
-  const i=hit.inv,it=hit.it;
-  out.innerHTML='<div class="glass vres ok"><h2 style="color:var(--good)">Matching workspace record found</h2><p class="muted" style="margin:6px 0 12px">This is only a match against editable records in this browser. The certificate number is not a digital signature or independent proof of authenticity.</p><dl class="dl"><dt>Certificate</dt><dd class="mono">'+esc(code)+'</dd><dt>Watch</dt><dd>'+esc(it.brand+' '+it.model)+'</dd><dt>Reference or serial</dt><dd class="mono">'+esc(it.serial||'-')+'</dd><dt>Case and movement</dt><dd>'+esc([it.caseMaterial,it.movement].filter(Boolean).join(', ')||'-')+'</dd><dt>Sold to</dt><dd>'+esc(i.client.name)+'</dd><dt>Invoice</dt><dd class="mono">'+esc(i.number)+'</dd><dt>Purchase date</dt><dd>'+fmtDate(i.date)+'</dd><dt>Warranty until</dt><dd>'+fmtDate(addMonths(i.date,num(it.warranty)))+' ('+num(it.warranty)+' months)</dd></dl>';
+  if(!/^[A-Z0-9-]{20,80}$/.test(code)){
+    out.innerHTML='<div class="glass vres no"><h2 style="color:var(--warn)">Legacy or invalid code format</h2><p class="muted" style="margin-top:6px">Online certificate codes must be 20–80 characters. Older AC-XXXX-XXXX codes were generated locally and are not in the online registry. Do not treat a local match as independent verification.</p></div>';return;
+  }
+  if(verifyBusy)return;
+  const wait=2000-(Date.now()-lastVerifyAt);
+  if(wait>0){out.innerHTML='<div class="glass vres no"><p class="muted">Please wait a moment before checking another code.</p></div>';return}
+  verifyBusy=true;lastVerifyAt=Date.now();
+  out.innerHTML='<div class="glass vres"><p class="muted">Checking the online certificate registry…</p></div>';
+  try{
+    const response=await fetch(SUPABASE_URL+'/rest/v1/rpc/verify_certificate_result',{
+      method:'POST',
+      headers:{'Content-Type':'application/json','apikey':SUPABASE_PUBLISHABLE_KEY,'Authorization':'Bearer '+SUPABASE_PUBLISHABLE_KEY},
+      body:JSON.stringify({p_code:code})
+    });
+    if(!response.ok){
+      let detail='The online verification service could not complete the request.';
+      try{const err=await response.json();if(err&&err.message)detail=err.message}catch(e){}
+      throw new Error(detail);
+    }
+    const payload=await response.json(),record=Array.isArray(payload)?payload[0]:payload;
+    if(!record||record.found!==true){
+      out.innerHTML='<div class="glass vres no"><h2 style="color:var(--bad)">No online record found</h2><p class="muted" style="margin-top:6px">No certificate with this code is currently registered. This does not prove the watch is fake. Check the code and contact the issuing shop through independently trusted contact details.</p></div>';return;
+    }
+    const revoked=record.certificate_status==='revoked';
+    out.innerHTML='<div class="glass vres '+(revoked?'no':'ok')+'"><h2 style="color:var(--'+(revoked?'bad':'good')+')">'+(revoked?'Certificate revoked':'Certificate record found')+'</h2><p class="muted" style="margin:6px 0 12px">'+(revoked?'The issuing shop has marked this certificate as revoked. Do not rely on it as active warranty evidence.':'The online registry contains an active record for this certificate. This confirms the registry entry, not the physical watch\'s condition or authenticity.')+'</p><dl class="dl"><dt>Certificate</dt><dd class="mono">'+esc(code)+'</dd><dt>Status</dt><dd>'+esc(record.certificate_status||'unknown')+'</dd><dt>Watch</dt><dd>'+esc([record.watch_brand,record.watch_model].filter(Boolean).join(' ')||'-')+'</dd><dt>Reference</dt><dd class="mono">'+esc(record.watch_reference||'-')+'</dd><dt>Serial ending</dt><dd class="mono">'+esc(record.serial_last4||'-')+'</dd><dt>Issue date</dt><dd>'+esc(record.issue_date||'-')+'</dd><dt>Warranty until</dt><dd>'+esc(record.warranty_until||'Not specified')+'</dd></dl></div>';
+  }catch(error){
+    out.innerHTML='<div class="glass vres no"><h2 style="color:var(--bad)">Verification service unavailable</h2><p class="muted" style="margin-top:6px">'+esc(error&&error.message?error.message:'Please try again later.')+'</p></div>';
+  }finally{verifyBusy=false}
 }
 
 /* ---------- settings ---------- */
